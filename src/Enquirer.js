@@ -1,6 +1,5 @@
 "use strict";
 const enq = require('enquirer');
-const path = require('path');
 
 function mapPromptConstructorName (name) {
     switch (name) {
