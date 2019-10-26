@@ -6,15 +6,16 @@ import Capability.PrintOutput (class PrintOutput)
 import Capability.PromptInput (class PromptInput, BoatInfo)
 import Control.Monad.State (StateT, evalStateT, get, put)
 import Control.Monad.State.Class (class MonadState)
+import Control.Monad.Writer.Trans (class MonadTell, WriterT, runWriterT, tell)
+import Data.Array (unsafeIndex)
 import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.Newtype (class Newtype, unwrap)
+import Data.Tuple (Tuple(..))
 import Game (State(..), Shore(..), step, InvalidMove(..), runGame)
+import Partial.Unsafe (unsafePartial)
 import Test.Spec (describe, it, Spec)
 import Test.Spec.Assertions (shouldEqual)
-import Data.Tuple (Tuple(..))
-import Data.Array (unsafeIndex)
-import Partial.Unsafe (unsafePartial)
 
 stepSpec :: Spec Unit
 stepSpec = do
@@ -176,16 +177,34 @@ stepSpec = do
       in
         step initialState boat `shouldEqual` Right expectedState
 
-newtype TestSate = TestState (Tuple (Array BoatInfo) Int)
-newtype TestM a = TestM (StateT TestSate Identity a)
+arrayToBoatInfo :: Array String -> BoatInfo
+arrayToBoatInfo input =
+  { first: (unsafePartial $ unsafeIndex input 0)
+  , second: (unsafePartial $ unsafeIndex input 1)
+  }
 
-runTestM :: forall a. Array (Array String) -> TestM a -> a
-runTestM inputs (TestM stateM) =
+newtype TestSate = TestState (Tuple (Array BoatInfo) Int)
+newtype TestM a =
+  TestM (
+    WriterT
+      (Array String)
+      (StateT TestSate Identity)
+      a
+  )
+
+-- Given a mock of the user input (Array of Boat moves) and a test computation,
+-- return the computed value and the printed values
+runTestM :: forall a. Array BoatInfo -> TestM a -> Tuple a (Array String)
+runTestM inputs (TestM computation) =
   let
-    boatInfos = (\input -> { first: (unsafePartial $ unsafeIndex input 0), second: (unsafePartial $ unsafeIndex input 1)}) <$> inputs
-    evalState = evalStateT stateM $ TestState $ Tuple boatInfos 0
+    -- First run the WriterT computation, returning another computation to the value and printed values
+    statefulComputation :: StateT TestSate Identity (Tuple a (Array String))
+    statefulComputation = runWriterT computation
+
+    wrappedResult :: Identity (Tuple a (Array String))
+    wrappedResult = evalStateT statefulComputation $ TestState $ Tuple inputs 0
   in
-    unwrap evalState
+    unwrap wrappedResult
 
 
 -- Derive the instances that would make TestM an actual Monad
@@ -198,22 +217,24 @@ derive newtype instance monadTestM :: Monad TestM
 
 -- Derive instances to work with the underlying monad transformers
 derive newtype instance monadStateTestM :: MonadState TestSate TestM
+derive newtype instance monadTellTestM :: MonadTell (Array String) TestM
+
 
 -- Now we can create the mock implementation for the abstract capabilities.
 instance printOutputTestM :: PrintOutput TestM where
-  print msg = pure unit
+  print msg = tell [msg]
 
--- TODO: Do not run with this as it will do a infinite loop
 instance promptInputTestM :: PromptInput TestM where
   promptBoatInfo :: String -> TestM BoatInfo
   promptBoatInfo direction = do
+    -- Get the current state
     (TestState (Tuple inputs index)) <- get
+    -- Add one to the index so the next time we're called, we return the next index
+    put (TestState (Tuple inputs (index + 1)))
+    -- And return the index
+    pure $ unsafePartial $ unsafeIndex inputs index
     -- TODO: We should either change the promptInput capability to return a Maybe (m BoatInfo)
     --       or add a MonadError to TestM with a special error if the index gets out of bound
-    put (TestState (Tuple inputs (index + 1)))
-    pure $ unsafePartial $ unsafeIndex inputs index
-  -- promptBoatInfo direction = pure { first: "Monkey", second: "Wolf"}
-
 
 runGameSpec :: Spec Unit
 runGameSpec = do
@@ -224,7 +245,7 @@ runGameSpec = do
           (Shore {name: "initial", monkeys: 3, wolfs: 3})
           (Shore {name: "final", monkeys: 0, wolfs: 0})
 
-        input =
+        input = arrayToBoatInfo <$>
           -- 1 wolf and 1 monkey row there, monkey rows back.
           [ ["Wolf", "Monkey"]
           , ["Monkey", "Empty"]
@@ -246,5 +267,21 @@ runGameSpec = do
         expectedState = BoatBackward
           (Shore {name: "initial", monkeys: 0, wolfs: 0})
           (Shore {name: "final", monkeys: 3, wolfs: 3})
+
+        -- TODO: This test is too flaky, shouldn't test for the entiiiire output
+        expectedMsgs =
+          [ "The boat is moving forwards, the initial shore has 3 monkeys and 3 wolfs and the final shore has 0 monkeys and 0 wolfs"
+          , "The boat is moving backwards, the initial shore has 2 monkeys and 2 wolfs and the final shore has 1 monkeys and 1 wolfs"
+          , "The boat is moving forwards, the initial shore has 3 monkeys and 2 wolfs and the final shore has 0 monkeys and 1 wolfs"
+          , "The boat is moving backwards, the initial shore has 3 monkeys and 0 wolfs and the final shore has 0 monkeys and 3 wolfs"
+          , "The boat is moving forwards, the initial shore has 3 monkeys and 1 wolfs and the final shore has 0 monkeys and 2 wolfs"
+          , "The boat is moving backwards, the initial shore has 1 monkeys and 1 wolfs and the final shore has 2 monkeys and 2 wolfs"
+          , "The boat is moving forwards, the initial shore has 2 monkeys and 2 wolfs and the final shore has 1 monkeys and 1 wolfs"
+          , "The boat is moving backwards, the initial shore has 0 monkeys and 2 wolfs and the final shore has 3 monkeys and 1 wolfs"
+          , "The boat is moving forwards, the initial shore has 0 monkeys and 3 wolfs and the final shore has 3 monkeys and 0 wolfs"
+          , "The boat is moving backwards, the initial shore has 0 monkeys and 1 wolfs and the final shore has 3 monkeys and 2 wolfs"
+          , "The boat is moving forwards, the initial shore has 0 monkeys and 2 wolfs and the final shore has 3 monkeys and 1 wolfs"
+          , "Congratulations! You have solved the puzzle"
+          ]
       in
-        (runTestM input $ runGame initialState) `shouldEqual` expectedState
+        (runTestM input $ runGame initialState) `shouldEqual` (Tuple expectedState expectedMsgs)

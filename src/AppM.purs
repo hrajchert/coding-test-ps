@@ -24,7 +24,7 @@ import Simple.JSON (read, class ReadForeign)
 newtype AppM a = AppM (Aff a)
 
 runAppM :: forall a. AppM a -> Aff a
-runAppM (AppM a) = a
+runAppM (AppM aff) = aff
 
 -- Derive the instances that would make AppM an actual Monad
 derive instance newtypeAppM :: Newtype (AppM a) _
@@ -40,7 +40,6 @@ derive newtype instance monadAffAppM :: MonadAff AppM
 
 
 -- Now we can create the concrete implementation for the abstract capabilities.
-
 instance printOutputAppM :: PrintOutput AppM where
   print = liftEffect <<< log
 
