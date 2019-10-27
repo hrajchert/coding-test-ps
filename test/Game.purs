@@ -7,11 +7,12 @@ import Capability.PromptInput (class PromptInput, BoatInfo)
 import Control.Monad.State (StateT, evalStateT, get, put)
 import Control.Monad.State.Class (class MonadState)
 import Control.Monad.Writer.Trans (class MonadTell, WriterT, runWriterT, tell)
-import Data.Array (unsafeIndex)
+import Data.Array (last, unsafeIndex)
 import Data.Either (Either(..))
 import Data.Identity (Identity)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, unwrap)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst, snd)
 import Game (State(..), Shore(..), step, InvalidMove(..), runGame)
 import Partial.Unsafe (unsafePartial)
 import Test.Spec (describe, it, Spec)
@@ -239,49 +240,43 @@ instance promptInputTestM :: PromptInput TestM where
 runGameSpec :: Spec Unit
 runGameSpec = do
   describe "runGame" do
+    let
+      initialState = BoatForward
+        (Shore {name: "initial", monkeys: 3, wolfs: 3})
+        (Shore {name: "final", monkeys: 0, wolfs: 0})
+
+      winningInput = arrayToBoatInfo <$>
+        -- 1 wolf and 1 monkey row there, monkey rows back.
+        [ ["Wolf", "Monkey"]
+        , ["Monkey", "Empty"]
+          -- 2 wolves row there, 1 wolf rows back.
+        , ["Wolf", "Wolf"]
+        , ["Wolf", "Empty"]
+          -- 2 monkeys row there, 1 monkey and 1 wolf rows back.
+        , ["Monkey", "Monkey"]
+        , ["Monkey", "Wolf"]
+          -- 2 monkeys row there, 1 wolf rows back.
+        , ["Monkey", "Monkey"]
+        , ["Wolf", "Empty"]
+          -- This one wolf takes the remaining wolves to the other side.
+        , ["Wolf", "Wolf"]
+        , ["Wolf", "Empty"]
+        , ["Wolf", "Wolf"]
+        ]
+
     it "Should be possible to win"
       let
-        initialState = BoatForward
-          (Shore {name: "initial", monkeys: 3, wolfs: 3})
-          (Shore {name: "final", monkeys: 0, wolfs: 0})
-
-        input = arrayToBoatInfo <$>
-          -- 1 wolf and 1 monkey row there, monkey rows back.
-          [ ["Wolf", "Monkey"]
-          , ["Monkey", "Empty"]
-            -- 2 wolves row there, 1 wolf rows back.
-          , ["Wolf", "Wolf"]
-          , ["Wolf", "Empty"]
-            -- 2 monkeys row there, 1 monkey and 1 wolf rows back.
-          , ["Monkey", "Monkey"]
-          , ["Monkey", "Wolf"]
-            -- 2 monkeys row there, 1 wolf rows back.
-          , ["Monkey", "Monkey"]
-          , ["Wolf", "Empty"]
-            -- This one wolf takes the remaining wolves to the other side.
-          , ["Wolf", "Wolf"]
-          , ["Wolf", "Empty"]
-          , ["Wolf", "Wolf"]
-          ]
-
+        gameResult = runTestM winningInput $ runGame initialState
         expectedState = BoatBackward
           (Shore {name: "initial", monkeys: 0, wolfs: 0})
           (Shore {name: "final", monkeys: 3, wolfs: 3})
-
-        -- TODO: This test is too flaky, shouldn't test for the entiiiire output
-        expectedMsgs =
-          [ "The boat is moving forwards, the initial shore has 3 monkeys and 3 wolfs and the final shore has 0 monkeys and 0 wolfs"
-          , "The boat is moving backwards, the initial shore has 2 monkeys and 2 wolfs and the final shore has 1 monkeys and 1 wolfs"
-          , "The boat is moving forwards, the initial shore has 3 monkeys and 2 wolfs and the final shore has 0 monkeys and 1 wolfs"
-          , "The boat is moving backwards, the initial shore has 3 monkeys and 0 wolfs and the final shore has 0 monkeys and 3 wolfs"
-          , "The boat is moving forwards, the initial shore has 3 monkeys and 1 wolfs and the final shore has 0 monkeys and 2 wolfs"
-          , "The boat is moving backwards, the initial shore has 1 monkeys and 1 wolfs and the final shore has 2 monkeys and 2 wolfs"
-          , "The boat is moving forwards, the initial shore has 2 monkeys and 2 wolfs and the final shore has 1 monkeys and 1 wolfs"
-          , "The boat is moving backwards, the initial shore has 0 monkeys and 2 wolfs and the final shore has 3 monkeys and 1 wolfs"
-          , "The boat is moving forwards, the initial shore has 0 monkeys and 3 wolfs and the final shore has 3 monkeys and 0 wolfs"
-          , "The boat is moving backwards, the initial shore has 0 monkeys and 1 wolfs and the final shore has 3 monkeys and 2 wolfs"
-          , "The boat is moving forwards, the initial shore has 0 monkeys and 2 wolfs and the final shore has 3 monkeys and 1 wolfs"
-          , "Congratulations! You have solved the puzzle"
-          ]
       in
-        (runTestM input $ runGame initialState) `shouldEqual` (Tuple expectedState expectedMsgs)
+        (fst $ gameResult) `shouldEqual` expectedState
+
+    it "Should congratulate you when you win"
+      let
+        gameResult = runTestM winningInput $ runGame initialState
+
+        expectedMsg = "Congratulations! You have solved the puzzle"
+      in
+        (last $ snd $ gameResult) `shouldEqual` (Just expectedMsg)
