@@ -2,15 +2,10 @@ module Game where
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
 import Data.Either (Either(..))
-import Effect.Exception (error)
-import Foreign (Foreign)
-import Enquirer (PromptOptions(..), promptMultiple)
 
 import Capability.PrintOutput (class PrintOutput, print)
 import Capability.PromptInput (class PromptInput, BoatInfo, promptBoatInfo)
-
 
 type Monkeys = Int
 type Wolfs = Int
@@ -36,7 +31,15 @@ newtype Shore = Shore {name :: String, monkeys :: Monkeys, wolfs :: Wolfs}
 derive instance eqShore :: Eq Shore
 
 instance shoreShow :: Show Shore where
-  show (Shore {name, monkeys, wolfs}) = "the " <> name <> " shore has " <> show monkeys <> " monkeys and " <> show wolfs <> " wolfs"
+  show (Shore {name, monkeys, wolfs}) =
+    let
+      repeat :: String -> Int -> String
+      repeat str n | n > 0  = str <> repeat str (n-1)
+      repeat str _ = ""
+    in
+      if name == "initial"
+        then "🏝 " <> repeat "🐒 " monkeys <> " " <> repeat "🐺 " wolfs
+        else repeat " 🐒" monkeys <> " " <> repeat " 🐺" wolfs <> " 🏝"
 
 data State
   = BoatForward Shore Shore
@@ -45,8 +48,8 @@ data State
 derive instance eqState :: Eq State
 
 instance showState :: Show State where
-  show (BoatForward from to) = "The boat is moving forwards, " <> show from <> " and " <> show to
-  show (BoatBackward from to) = "The boat is moving backwards, " <> show from <> " and " <> show to
+  show (BoatForward from to) = show from <> "--🛶--->" <> show to
+  show (BoatBackward from to) = show from <> "<--🛶---" <> show to
 
 boatDirection :: State -> String
 boatDirection (BoatForward _ _)  = "forward"
