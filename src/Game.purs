@@ -98,18 +98,20 @@ moveAnimalsToShore :: Shore -> BoatPassengerCount -> Either InvalidMove Shore
 moveAnimalsToShore (Shore to) count = validateShore (Shore {name: to.name, monkeys: to.monkeys + count.monkeys, wolfs: to.wolfs + count.wolfs})
 
 step :: State -> BoatInfo -> Either InvalidMove State
-step (BoatForward initial final) boat = do
+step state boatInfo =
   let
-    count = countPassengers boat
-  newInitialShore <- moveAnimalsToBoat initial count
-  newFinalShore <- moveAnimalsToShore final count
-  Right $ (BoatBackward newInitialShore newFinalShore)
-step (BoatBackward initial final) boat = do
-  let
-    count = countPassengers boat
-  newFinalShore <- moveAnimalsToBoat final count
-  newInitialShore <- moveAnimalsToShore initial count
-  Right $ (BoatForward  newInitialShore newFinalShore)
+    passengerCount = countPassengers boatInfo
+  in
+    case state of
+      (BoatForward initial final) -> do
+        newInitialShore <- moveAnimalsToBoat initial passengerCount
+        newFinalShore <- moveAnimalsToShore final passengerCount
+        Right $ (BoatBackward newInitialShore newFinalShore)
+
+      (BoatBackward initial final) -> do
+        newFinalShore <- moveAnimalsToBoat final passengerCount
+        newInitialShore <- moveAnimalsToShore initial passengerCount
+        Right $ (BoatForward  newInitialShore newFinalShore)
 
 runGame :: forall m
    . PrintOutput m
