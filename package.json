@@ -1,5 +1,5 @@
 {
-  "name": "galley-ps",
+  "name": "coding-test-ps",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "enquirer": "^2.3.2",
     "pulp": "^13.0.0",
